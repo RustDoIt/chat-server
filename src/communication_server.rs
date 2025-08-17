@@ -5,11 +5,12 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{ChatRequest, ChatResponse, NodeCommand, ServerType};
+use common::types::{ChatCommand, ChatEvent, ChatRequest, ChatResponse, NodeCommand, ServerType};
 
 pub struct ChatServer {
     routing_handler: RoutingHandler,
     controller_recv: Receiver<Box<dyn Any>>,
+    controller_send: Sender<Box<dyn Any>>,
     packet_recv: Receiver<Packet>,
     id: NodeId,
     assembler: FragmentAssembler,
@@ -18,15 +19,19 @@ pub struct ChatServer {
 
 impl ChatServer {
     pub fn new(id: NodeId, neighbors: HashMap<NodeId, Sender<Packet>>, packet_recv: Receiver<Packet>, controller_recv: Receiver<Box<dyn Any>>, controller_send: Sender<Box<dyn Any>>) -> Self {
-        let router = RoutingHandler::new(id, NodeType::Server, neighbors, controller_send);
+        let router = RoutingHandler::new(id, NodeType::Server, neighbors, controller_send.clone());
         Self {
             routing_handler: router,
             controller_recv,
+            controller_send,
             packet_recv,
             id,
             assembler: FragmentAssembler::default(),
             registered_clients: HashSet::new(),
         }
+    }
+    pub fn get_registered_clients(&self) -> Vec<NodeId> {
+        self.registered_clients.iter().cloned().collect()
     }
 }
 
@@ -88,6 +93,14 @@ impl Processor for ChatServer {
                 NodeCommand::AddSender(node_id, sender) => self.routing_handler.add_neighbor(*node_id, sender.clone()),
                 NodeCommand::RemoveSender(node_id) => self.routing_handler.remove_neighbor(*node_id),
                 NodeCommand::Shutdown => return Err(())
+            }
+        } else if let Some(cmd) = cmd.downcast_ref::<ChatCommand>() {
+            match cmd {
+                ChatCommand::GetConnectedClients => {
+                    let registered_clients = self.get_registered_clients();
+                    let _ = self.controller_send.send(Box::new(ChatEvent::ConnectedClients(registered_clients)));
+                }
+                _ => {}
             }
         }
         Ok(())
