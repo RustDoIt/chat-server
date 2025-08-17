@@ -1,11 +1,11 @@
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crossbeam::channel::{Receiver, Sender};
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::NodeCommand;
+use common::types::{ChatRequest, ChatResponse, NodeCommand, ServerType};
 
 pub struct ChatServer {
     routing_handler: RoutingHandler,
@@ -13,6 +13,7 @@ pub struct ChatServer {
     packet_recv: Receiver<Packet>,
     id: NodeId,
     assembler: FragmentAssembler,
+    registered_clients: HashSet<NodeId>,
 }
 
 impl ChatServer {
@@ -24,6 +25,7 @@ impl ChatServer {
             packet_recv,
             id,
             assembler: FragmentAssembler::default(),
+            registered_clients: HashSet::new(),
         }
     }
 }
@@ -45,8 +47,39 @@ impl Processor for ChatServer {
         &mut self.routing_handler
     }
 
-    fn handle_msg(&mut self, _msg: Vec<u8>) {
-        todo!()
+    fn handle_msg(&mut self, msg: Vec<u8>, from: NodeId, session_id: u64) {
+        if let Ok(msg) = serde_json::from_slice::<ChatRequest>(&msg) {
+            match msg {
+                ChatRequest::ServerTypeQuery => {
+                    if let Ok(res) = serde_json::to_vec(&ChatResponse::ServerType { server_id: self.id, server_type: ServerType::ChatServer }) {
+                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                    }
+                }
+                ChatRequest::RegistrationToChat { client_id } => {
+                    self.registered_clients.insert(client_id);
+                    if let Ok(res) = serde_json::to_vec(&ChatResponse::RegistrationSuccess) {
+                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                    }
+                }
+                ChatRequest::ClientListQuery => {
+                    let client_list = self.registered_clients.iter().cloned().collect::<Vec<_>>();
+                    if let Ok(res) = serde_json::to_vec(&ChatResponse::ClientList {list_of_client_ids: client_list}) {
+                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                    }
+                }
+                ChatRequest::MessageFor { client_id, message } => {
+                    if !self.registered_clients.contains(&client_id) {
+                        if let Ok(res) = serde_json::to_vec(&ChatResponse::ErrorWrongClientId) {
+                            let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        }
+                        return
+                    }
+                    if let Ok(res) = serde_json::to_vec(&ChatResponse::MessageFrom { client_id: from, message }) {
+                        let _ = self.routing_handler.send_message(&res, client_id, Some(session_id));
+                    }
+                }
+            }
+        }
     }
 
     fn handle_command(&mut self, cmd: Box<dyn Any>) {
