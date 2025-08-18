@@ -98,7 +98,9 @@ impl Processor for ChatServer {
             match cmd {
                 ChatCommand::GetRegisteredClients => {
                     let registered_clients = self.get_registered_clients();
-                    self.controller_send.send(Box::new(ChatEvent::RegisteredClients(registered_clients))).map_err(|_| true)?;
+                    if self.controller_send.send(Box::new(ChatEvent::RegisteredClients(registered_clients))).is_err() {
+                        return true;
+                    }
                 }
                 _ => {}
             }
