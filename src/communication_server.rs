@@ -87,23 +87,23 @@ impl Processor for ChatServer {
         }
     }
 
-    fn handle_command(&mut self, cmd: Box<dyn Any>) -> Result<(), ()> {
+    fn handle_command(&mut self, cmd: Box<dyn Any>) -> bool {
         if let Some(cmd) = cmd.downcast_ref::<NodeCommand>() {
             match cmd {
                 NodeCommand::AddSender(node_id, sender) => self.routing_handler.add_neighbor(*node_id, sender.clone()),
                 NodeCommand::RemoveSender(node_id) => self.routing_handler.remove_neighbor(*node_id),
-                NodeCommand::Shutdown => return Err(())
+                NodeCommand::Shutdown => return true
             }
         } else if let Some(cmd) = cmd.downcast_ref::<ChatCommand>() {
             match cmd {
-                ChatCommand::GetConnectedClients => {
+                ChatCommand::GetRegisteredClients => {
                     let registered_clients = self.get_registered_clients();
-                    let _ = self.controller_send.send(Box::new(ChatEvent::ConnectedClients(registered_clients)));
+                    self.controller_send.send(Box::new(ChatEvent::RegisteredClients(registered_clients))).map_err(|_| true)?;
                 }
                 _ => {}
             }
         }
-        Ok(())
+        false
     }
 }
 
