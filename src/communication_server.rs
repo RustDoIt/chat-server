@@ -48,7 +48,7 @@ impl Processor for ChatServer {
         &mut self.assembler
     }
 
-    fn routing_header(&mut self) -> &mut RoutingHandler {
+    fn routing_handler(&mut self) -> &mut RoutingHandler {
         &mut self.routing_handler
     }
 
@@ -56,7 +56,7 @@ impl Processor for ChatServer {
         if let Ok(msg) = serde_json::from_slice::<ChatRequest>(&msg) {
             match msg {
                 ChatRequest::ServerTypeQuery => {
-                    if let Ok(res) = serde_json::to_vec(&ChatResponse::ServerType { server_id: self.id, server_type: ServerType::ChatServer }) {
+                    if let Ok(res) = serde_json::to_vec(&ChatResponse::ServerType { server_type: ServerType::ChatServer }) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
                     }
                 }
