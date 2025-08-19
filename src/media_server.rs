@@ -232,7 +232,7 @@ impl Processor for MediaServer {
 }
 
 #[cfg(test)]
-mod tests {
+mod media_server_tests {
     use super::*;
     use crossbeam::channel::unbounded;
 
@@ -257,7 +257,6 @@ mod tests {
             "test_image.png".to_string(),
             vec![vec![0x89, 0x50, 0x4E, 0x47]]
         );
-        let media_id = test_media.id;
         server.add_media_file(test_media);
         let media_list = server.get_media_list();
 
