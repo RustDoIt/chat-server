@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::{HashMap};
 use crossbeam::channel::{Receiver, Sender};
-use uuid::Uuid;
+use uuid::{Error, Uuid};
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
@@ -19,7 +19,13 @@ pub struct TextServer {
 }
 
 impl TextServer {
-    pub fn new(id: NodeId, neighbors: HashMap<NodeId, Sender<Packet>>, packet_recv: Receiver<Packet>, controller_recv: Receiver<Box<dyn Any>>, controller_send: Sender<Box<dyn Any>>) -> Self {
+    pub fn new(
+        id: NodeId,
+        neighbors: HashMap<NodeId, Sender<Packet>>,
+        packet_recv: Receiver<Packet>,
+        controller_recv: Receiver<Box<dyn Any>>,
+        controller_send: Sender<Box<dyn Any>>
+    ) -> Self {
         let router = RoutingHandler::new(id, NodeType::Server, neighbors, controller_send.clone());
         Self {
             routing_handler: router,
@@ -30,6 +36,17 @@ impl TextServer {
             assembler: FragmentAssembler::default(),
             stored_files: HashMap::new(),
         }
+    }
+
+    fn get_files_list(&self) -> Vec<String> {
+        self.stored_files
+            .values()
+            .map(|file| format!("{}:{}", file.id, file.title))
+            .collect()
+    }
+
+    pub fn get_file_by_id(&self, file_id: Uuid) -> Option<&TextFile> {
+        self.stored_files.get(&file_id)
     }
 }
 
@@ -58,9 +75,37 @@ impl Processor for TextServer {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
                     }
                 }
-                WebRequest::TextFilesListQuery => {todo!()}
-                WebRequest::FileQuery { .. } => {todo!()}
-                WebRequest::MediaQuery { .. } => {todo!()}
+                WebRequest::TextFilesListQuery => {
+                    let files_list = self.get_files_list();
+                    if let Ok(res) = serde_json::to_vec(&WebResponse::TextFilesList {files: files_list}) {
+                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                    }
+                }
+                WebRequest::FileQuery { file_id } => {
+                    match Uuid::parse_str(&file_id) {
+                        Ok(uuid) => {
+                            if let Some(text_file) = self.get_file_by_id(uuid) {
+                                if let Ok(serialized_file) = serde_json::to_vec(text_file) {
+                                    if let Ok(res) = serde_json::to_vec(&WebResponse::TextFile { file_data: serialized_file }) {
+                                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                    }
+                                }
+                            } else {
+                                if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
+                                    let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            // eprintln!("Invalid UUID format in file query: {}", file_id);
+                            todo!()
+                        }
+                    }
+                }
+                WebRequest::MediaQuery { .. } => {
+                    // eprintln!("Text server received media query - this should be handled by media server");
+                    todo!();
+                }
             }
         }
     }
