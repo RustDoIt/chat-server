@@ -6,7 +6,7 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{file_conversion, MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
 
 pub struct MediaServer {
     routing_handler: RoutingHandler,
@@ -171,7 +171,31 @@ impl Processor for MediaServer {
                         return true;
                     }
                 }
-                WebCommand::AddMediaFileFromPath(_) => { todo!() }
+                WebCommand::AddMediaFileFromPath(file_path) => {
+                    match file_conversion::file_to_media_file(file_path) {
+                        Ok(media_file) => {
+                            let file_id = media_file.id;
+                            self.add_media_file(media_file);
+
+                            if self.controller_send
+                                .send(Box::new(WebEvent::MediaFileAdded(file_id)))
+                                .is_err()
+                            {
+                                return true;
+                            }
+                        }
+                        Err(conversion_error) => {
+                            if self.controller_send
+                                .send(Box::new(WebEvent::FileOperationError(
+                                    format!("Failed to convert file {}: {}", file_path, conversion_error)
+                                )))
+                                .is_err()
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
                 WebCommand::RemoveMediaFile(uuid) => {
                     if let Some(removed_file) = self.remove_media_file(*uuid) {
                         if self.controller_send

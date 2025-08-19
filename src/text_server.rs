@@ -6,7 +6,7 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{file_conversion, File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
 
 pub struct TextServer {
     routing_handler: RoutingHandler,
@@ -202,7 +202,31 @@ impl Processor for TextServer {
                         return true;
                     }
                 }
-                WebCommand::AddTextFileFromPath(_) => { todo!() }
+                WebCommand::AddTextFileFromPath(file_path) => {
+                    match file_conversion::file_to_text_file(file_path) {
+                        Ok(text_file) => {
+                            let file_id = text_file.id;
+                            self.add_text_file(text_file);
+
+                            if self.controller_send
+                                .send(Box::new(WebEvent::TextFileAdded(file_id)))
+                                .is_err()
+                            {
+                                return true;
+                            }
+                        }
+                        Err(conversion_error) => {
+                            if self.controller_send
+                                .send(Box::new(WebEvent::FileOperationError(
+                                    format!("Failed to convert text file {}: {}", file_path, conversion_error)
+                                )))
+                                .is_err()
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
                 WebCommand::RemoveTextFile(uuid) => {
                     if let Some(removed_file) = self.remove_text_file(*uuid) {
                         if self.controller_send
