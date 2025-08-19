@@ -1,12 +1,12 @@
 use std::any::Any;
 use std::collections::{HashMap};
 use crossbeam::channel::{Receiver, Sender};
-use uuid::{Error, Uuid};
+use uuid::{Uuid};
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{NodeCommand, ServerType, TextFile, WebCommand, WebRequest, WebResponse};
+use common::types::{File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
 
 pub struct TextServer {
     routing_handler: RoutingHandler,
@@ -45,8 +45,16 @@ impl TextServer {
             .collect()
     }
 
-    pub fn get_file_by_id(&self, file_id: Uuid) -> Option<&TextFile> {
+    fn get_file_by_id(&self, file_id: Uuid) -> Option<&TextFile> {
         self.stored_files.get(&file_id)
+    }
+
+    fn add_text_file(&mut self, text_file: TextFile) {
+        self.stored_files.insert(text_file.id, text_file);
+    }
+
+    fn get_all_text_files(&self) -> Vec<TextFile> {
+        self.stored_files.values().cloned().collect()
     }
 }
 
@@ -119,12 +127,66 @@ impl Processor for TextServer {
             }
         }  else if let Some(cmd) = cmd.downcast_ref::<WebCommand>() {
             match cmd {
-                WebCommand::GetCachedFiles => {todo!()}
-                WebCommand::GetFile(_) => {todo!()}
-                WebCommand::GetTextFiles => {todo!()}
-                WebCommand::GetTextFile(_) => {todo!()}
-                WebCommand::GetMediaFiles => {todo!()}
-                WebCommand::GetMediaFile(_) => {todo!()}
+                WebCommand::GetCachedFiles => {
+                    let files = self.get_all_text_files();
+                    let files_as_full_files = files.into_iter().map(|tf| {
+                        File::new(tf, vec![]) // No media files in text server
+                    }).collect();
+
+                    if self.controller_send
+                        .send(Box::new(WebEvent::CachedFiles(files_as_full_files)))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                }
+                WebCommand::GetFile(uuid) => {
+                    if let Some(text_file) = self.get_file_by_id(*uuid) {
+                        let file = File::new(text_file.clone(), vec![]);
+                        if self.controller_send
+                            .send(Box::new(WebEvent::File(file)))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    }
+                }
+                WebCommand::GetTextFiles => {
+                    let text_files = self.get_all_text_files();
+                    if self.controller_send
+                        .send(Box::new(WebEvent::TextFiles(text_files)))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                }
+                WebCommand::GetTextFile(uuid) => {
+                    if let Some(text_file) = self.get_file_by_id(*uuid) {
+                        if self.controller_send
+                            .send(Box::new(WebEvent::TextFile(text_file.clone())))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    }
+                }
+                WebCommand::GetMediaFiles => {
+                    if self.controller_send
+                        .send(Box::new(WebEvent::MediaFiles(vec![])))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                }
+                WebCommand::GetMediaFile(uuid) => {
+                    if self.controller_send
+                        .send(Box::new(WebEvent::FileNotFound(*uuid)))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                    todo!()
+                }
             }
         }
         false
