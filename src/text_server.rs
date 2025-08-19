@@ -193,3 +193,29 @@ impl Processor for TextServer {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossbeam::channel::unbounded;
+
+    #[test]
+    fn test_add_and_retrieve_file() {
+        let (controller_send, controller_recv) = unbounded();
+        let (_, packet_recv) = unbounded();
+
+        let mut server = TextServer::new(1, HashMap::new(), packet_recv, controller_recv, controller_send);
+
+        let test_file = TextFile::new(
+            "Test File".to_string(),
+            "This is a test file content.".to_string(),
+            vec![]
+        );
+        let file_id = test_file.id;
+
+        server.add_text_file(test_file);
+
+        let retrieved = server.get_file_by_id(file_id);
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().title, "Test File");
+    }
+}
