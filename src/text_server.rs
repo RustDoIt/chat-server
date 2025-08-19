@@ -199,6 +199,40 @@ mod tests {
     use crossbeam::channel::unbounded;
 
     #[test]
+    fn test_text_server_creation() {
+        let (controller_send, controller_recv) = unbounded();
+        let (_, packet_recv) = unbounded();
+
+        let server = TextServer::new(1, HashMap::new(), packet_recv, controller_recv, controller_send);
+
+        assert_eq!(server.id, 1);
+        assert!(server.stored_files.is_empty());
+    }
+
+    #[test]
+    fn test_get_files_list() {
+        let (controller_send, controller_recv) = unbounded();
+        let (_, packet_recv) = unbounded();
+
+        let mut server = TextServer::new(1, HashMap::new(), packet_recv, controller_recv, controller_send);
+        let test_file = TextFile::new(
+            "Test File".to_string(),
+            "This is a test".to_string(),
+            vec![]
+        );
+        let file_id = test_file.id;
+        let title = test_file.clone().title;
+        server.add_text_file(test_file);
+
+        let files_list = server.get_files_list();
+
+        assert!(!files_list.is_empty());
+        for entry in &files_list {
+            assert_eq!(*entry, format!("{}:{}", file_id, title));
+        }
+    }
+
+    #[test]
     fn test_add_and_retrieve_file() {
         let (controller_send, controller_recv) = unbounded();
         let (_, packet_recv) = unbounded();
@@ -211,11 +245,12 @@ mod tests {
             vec![]
         );
         let file_id = test_file.id;
+        let title = test_file.clone().title;
 
         server.add_text_file(test_file);
 
         let retrieved = server.get_file_by_id(file_id);
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().title, "Test File");
+        assert_eq!(retrieved.unwrap().title, title);
     }
 }
