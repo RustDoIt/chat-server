@@ -53,6 +53,10 @@ impl TextServer {
         self.stored_files.insert(text_file.id, text_file);
     }
 
+    pub fn remove_text_file(&mut self, file_id: Uuid) -> Option<TextFile> {
+        self.stored_files.remove(&file_id)
+    }
+
     fn get_all_text_files(&self) -> Vec<TextFile> {
         self.stored_files.values().cloned().collect()
     }
@@ -186,6 +190,47 @@ impl Processor for TextServer {
                         return true;
                     }
                     todo!()
+                }
+                WebCommand::AddTextFile(text_file) => {
+                    let file_id = text_file.id;
+                    self.add_text_file(text_file.clone());
+
+                    if self.controller_send
+                        .send(Box::new(WebEvent::TextFileAdded(file_id)))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                }
+                WebCommand::AddTextFileFromPath(_) => { todo!() }
+                WebCommand::RemoveTextFile(uuid) => {
+                    if let Some(removed_file) = self.remove_text_file(*uuid) {
+                        if self.controller_send
+                            .send(Box::new(WebEvent::TextFileRemoved(removed_file.id)))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    } else {
+                        if self.controller_send
+                            .send(Box::new(WebEvent::FileOperationError(
+                                format!("Text file with ID {} not found", uuid)
+                            )))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    }
+                }
+                WebCommand::AddMediaFile(_) | WebCommand::AddMediaFileFromPath(_) | WebCommand::RemoveMediaFile(_) => {
+                    if self.controller_send
+                        .send(Box::new(WebEvent::FileOperationError(
+                            "Text server cannot store media files".to_string()
+                        )))
+                        .is_err()
+                    {
+                        return true;
+                    }
                 }
             }
         }

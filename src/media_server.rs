@@ -1,12 +1,12 @@
 use std::any::Any;
 use std::collections::{HashMap};
 use crossbeam::channel::{Receiver, Sender};
-use uuid::{Error, Uuid};
+use uuid::{Uuid};
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{File, MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
 
 pub struct MediaServer {
     routing_handler: RoutingHandler,
@@ -159,6 +159,47 @@ impl Processor for MediaServer {
                 WebCommand::GetFile(_) | WebCommand::GetTextFile(_) => {
                     eprintln!("Media server received get file command - this shouldn't happen");
                     todo!()
+                }
+                WebCommand::AddMediaFile(media_file) => {
+                    let file_id = media_file.id;
+                    self.add_media_file(media_file.clone());
+
+                    if self.controller_send
+                        .send(Box::new(WebEvent::MediaFileAdded(file_id)))
+                        .is_err()
+                    {
+                        return true;
+                    }
+                }
+                WebCommand::AddMediaFileFromPath(_) => { todo!() }
+                WebCommand::RemoveMediaFile(uuid) => {
+                    if let Some(removed_file) = self.remove_media_file(*uuid) {
+                        if self.controller_send
+                            .send(Box::new(WebEvent::MediaFileRemoved(removed_file.id)))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    } else {
+                        if self.controller_send
+                            .send(Box::new(WebEvent::FileOperationError(
+                                format!("Media file with ID {} not found", uuid)
+                            )))
+                            .is_err()
+                        {
+                            return true;
+                        }
+                    }
+                }
+                WebCommand::AddTextFile(_) | WebCommand::AddTextFileFromPath(_) | WebCommand::RemoveTextFile(_) => {
+                    if self.controller_send
+                        .send(Box::new(WebEvent::FileOperationError(
+                            "Media server cannot store text files".to_string()
+                        )))
+                        .is_err()
+                    {
+                        return true;
+                    }
                 }
             }
         }
