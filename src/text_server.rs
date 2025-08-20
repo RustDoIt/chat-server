@@ -6,7 +6,8 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{file_conversion, File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::file_conversion;
 
 pub struct TextServer {
     routing_handler: RoutingHandler,

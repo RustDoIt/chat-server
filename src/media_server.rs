@@ -6,7 +6,8 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{file_conversion, MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::file_conversion;
 
 pub struct MediaServer {
     routing_handler: RoutingHandler,
