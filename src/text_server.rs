@@ -183,9 +183,9 @@ impl Processor for TextServer {
                         return true;
                     }
                 }
-                WebCommand::GetMediaFile(uuid) => {
+                WebCommand::GetMediaFile{media_id,location} => {
                     if self.controller_send
-                        .send(Box::new(WebEvent::FileNotFound(*uuid)))
+                        .send(Box::new(WebEvent::FileNotFound(*media_id)))
                         .is_err()
                     {
                         return true;

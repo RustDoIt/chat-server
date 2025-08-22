@@ -137,8 +137,8 @@ impl Processor for MediaServer {
                         return true;
                     }
                 }
-                WebCommand::GetMediaFile(uuid) => {
-                    if let Some(media_file) = self.get_media_by_id(*uuid) {
+                WebCommand::GetMediaFile{media_id, location} => {
+                    if let Some(media_file) = self.get_media_by_id(*media_id) {
                         if self.controller_send
                             .send(Box::new(WebEvent::MediaFile(media_file.clone())))
                             .is_err()
