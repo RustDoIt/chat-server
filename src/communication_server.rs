@@ -12,7 +12,7 @@ pub struct ChatServer {
     controller_recv: Receiver<Box<dyn Any>>,
     controller_send: Sender<Box<dyn Any>>,
     packet_recv: Receiver<Packet>,
-    id: NodeId,
+    _id: NodeId,
     assembler: FragmentAssembler,
     registered_clients: HashSet<NodeId>,
 }
@@ -25,7 +25,7 @@ impl ChatServer {
             controller_recv,
             controller_send,
             packet_recv,
-            id,
+            _id: id,
             assembler: FragmentAssembler::default(),
             registered_clients: HashSet::new(),
         }
@@ -112,7 +112,6 @@ impl Processor for ChatServer {
 mod communication_server_tests {
     use super::*;
     use crossbeam::channel::unbounded;
-    use common::types::{ChatRequest};
 
     fn create_test_chat_server() -> (ChatServer, Receiver<Packet>, Sender<Box<dyn Any>>) {
         let (controller_send, controller_recv) = unbounded();

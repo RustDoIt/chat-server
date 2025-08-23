@@ -1,7 +1,7 @@
 use std::any::Any;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use crossbeam::channel::{Receiver, Sender};
-use uuid::{Uuid};
+use uuid::Uuid;
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
@@ -14,7 +14,7 @@ pub struct MediaServer {
     controller_recv: Receiver<Box<dyn Any>>,
     controller_send: Sender<Box<dyn Any>>,
     packet_recv: Receiver<Packet>,
-    id: NodeId,
+    _id: NodeId,
     assembler: FragmentAssembler,
     stored_media: HashMap<Uuid, MediaFile>,
 }
@@ -33,7 +33,7 @@ impl MediaServer {
             controller_recv,
             controller_send,
             packet_recv,
-            id,
+            _id: id,
             assembler: FragmentAssembler::default(),
             stored_media: HashMap::new(),
         }
