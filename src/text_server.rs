@@ -5,7 +5,7 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{Command, Event, File, NodeCommand, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{Command, Event, NodeCommand, NodeEvent, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
 use common::file_conversion;
 
 pub struct TextServer {
@@ -80,44 +80,53 @@ impl Processor for TextServer {
     }
 
     fn handle_msg(&mut self, msg: Vec<u8>, from: NodeId, session_id: u64) {
+        let _ = self.controller_send.send(Box::new(NodeEvent::MessageReceived(from, self.id)));
         if let Ok(msg) = serde_json::from_slice::<WebRequest>(&msg) {
             match msg {
                 WebRequest::ServerTypeQuery => {
+                    let _ = self.controller_send.send(Box::new(NodeEvent::ServerTypeQueried(from, self.id)));
                     if let Ok(res) = serde_json::to_vec(&WebResponse::ServerType { server_type: ServerType::TextServer }) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                     }
                 }
                 WebRequest::TextFilesListQuery => {
+                    let _ = self.controller_send.send(Box::new(WebEvent::FilesListQueried(from, self.id)));
                     let files_list = self.get_files_list();
                     if let Ok(res) = serde_json::to_vec(&WebResponse::TextFilesList {files: files_list}) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                     }
                 }
                 WebRequest::FileQuery { file_id } => {
+                    let _ = self.controller_send.send(Box::new(WebEvent::FileRequested(from, file_id.clone())));
                     match Uuid::parse_str(&file_id) {
                         Ok(uuid) => {
                             if let Some(text_file) = self.get_file_by_id(uuid) {
                                 if let Ok(serialized_file) = serde_json::to_vec(text_file) {
                                     if let Ok(res) = serde_json::to_vec(&WebResponse::TextFile { file_data: serialized_file }) {
                                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
+                                        let _ = self.controller_send.send(Box::new(WebEvent::FileServed(self.id, file_id.clone())));
                                     }
                                 }
                             } else {
                                 if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
                                     let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                    let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                                 }
                             }
                         }
                         Err(_) => {
-                            // eprintln!("Invalid UUID format in file query: {}", file_id);
-                            todo!()
+                            if let Ok(res) = serde_json::to_vec(&WebResponse::BadUuid(file_id.clone())) {
+                                let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
+                                let _ = self.controller_send.send(Box::new(WebEvent::BadUid(from, self.id, file_id)));
+                            }
                         }
                     }
                 }
-                WebRequest::MediaQuery { .. } => {
-                    // eprintln!("Text server received media query - this should be handled by media server");
-                    todo!();
-                }
+                _ => {}
             }
         }
     }
@@ -132,30 +141,6 @@ impl Processor for TextServer {
             }
         }  else if let Some(cmd) = cmd.downcast_ref::<WebCommand>() {
             match cmd {
-                WebCommand::GetCachedFiles => {
-                    let files = self.get_all_text_files();
-                    let files_as_full_files = files.into_iter().map(|tf| {
-                        File::new(tf, vec![]) // No media files in text server
-                    }).collect();
-
-                    if self.controller_send
-                        .send(Box::new(WebEvent::CachedFiles(files_as_full_files)))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                }
-                WebCommand::GetFile(uuid) => {
-                    if let Some(text_file) = self.get_file_by_id(*uuid) {
-                        let file = File::new(text_file.clone(), vec![]);
-                        if self.controller_send
-                            .send(Box::new(WebEvent::File(file)))
-                            .is_err()
-                        {
-                            return true;
-                        }
-                    }
-                }
                 WebCommand::GetTextFiles => {
                     let text_files = self.get_all_text_files();
                     if self.controller_send
@@ -174,23 +159,6 @@ impl Processor for TextServer {
                             return true;
                         }
                     }
-                }
-                WebCommand::GetMediaFiles => {
-                    if self.controller_send
-                        .send(Box::new(WebEvent::MediaFiles(vec![])))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                }
-                WebCommand::GetMediaFile{media_id,location: _location} => {
-                    if self.controller_send
-                        .send(Box::new(WebEvent::FileNotFound(*media_id)))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                    todo!()
                 }
                 WebCommand::AddTextFile(text_file) => {
                     let file_id = text_file.id;
@@ -247,16 +215,7 @@ impl Processor for TextServer {
                         }
                     }
                 }
-                WebCommand::AddMediaFile(_) | WebCommand::AddMediaFileFromPath(_) | WebCommand::RemoveMediaFile(_) => {
-                    if self.controller_send
-                        .send(Box::new(WebEvent::FileOperationError(
-                            "Text server cannot store media files".to_string()
-                        )))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                }
+                _ => {}
             }
         }
         false

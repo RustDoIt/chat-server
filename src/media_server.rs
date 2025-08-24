@@ -5,7 +5,7 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{Command, Event, MediaFile, NodeCommand, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
+use common::types::{Command, Event, MediaFile, NodeCommand, NodeEvent, ServerType, WebCommand, WebEvent, WebRequest, WebResponse};
 use common::file_conversion;
 
 pub struct MediaServer {
@@ -13,7 +13,7 @@ pub struct MediaServer {
     controller_recv: Receiver<Box<dyn Command>>,
     controller_send: Sender<Box<dyn Event>>,
     packet_recv: Receiver<Packet>,
-    _id: NodeId,
+    id: NodeId,
     assembler: FragmentAssembler,
     stored_media: HashMap<Uuid, MediaFile>,
 }
@@ -32,7 +32,7 @@ impl MediaServer {
             controller_recv,
             controller_send,
             packet_recv,
-            _id: id,
+            id,
             assembler: FragmentAssembler::default(),
             stored_media: HashMap::new(),
         }
@@ -80,14 +80,18 @@ impl Processor for MediaServer {
     }
 
     fn handle_msg(&mut self, msg: Vec<u8>, from: NodeId, session_id: u64) {
+        let _ = self.controller_send.send(Box::new(NodeEvent::MessageReceived(from, self.id)));
         if let Ok(msg) = serde_json::from_slice::<WebRequest>(&msg) {
             match msg {
                 WebRequest::ServerTypeQuery => {
+                    let _ = self.controller_send.send(Box::new(NodeEvent::ServerTypeQueried(from, self.id)));
                     if let Ok(res) = serde_json::to_vec(&WebResponse::ServerType { server_type: ServerType::MediaServer }) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                     }
                 }
                 WebRequest::MediaQuery { media_id } => {
+                    let _ = self.controller_send.send(Box::new(WebEvent::FileRequested(from, media_id.clone())));
                     match Uuid::parse_str(&media_id) {
                         Ok(uuid) => {
                             if let Some(media_file) = self.get_media_by_id(uuid) {
@@ -96,24 +100,27 @@ impl Processor for MediaServer {
                                         media_data: serialized_media
                                     }) {
                                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
+                                        let _ = self.controller_send.send(Box::new(WebEvent::FileServed(self.id, media_id.clone())));
                                     }
                                 }
                             } else {
                                 if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
                                     let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                    let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                                 }
                             }
                         }
                         Err(_) => {
-                            eprintln!("Invalid UUID format in media query: {}", media_id);
-                            todo!()
+                            if let Ok(res) = serde_json::to_vec(&WebResponse::BadUuid(media_id.clone())) {
+                                let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                                let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
+                                let _ = self.controller_send.send(Box::new(WebEvent::BadUid(from, self.id, media_id)));
+                            }
                         }
                     }
                 }
-                WebRequest::TextFilesListQuery | WebRequest::FileQuery { .. } => {
-                    eprintln!("Media server received text file query - this should be handled by text server");
-                    todo!()
-                }
+                _ => {}
             }
         }
     }
@@ -146,20 +153,6 @@ impl Processor for MediaServer {
                             return true;
                         }
                     }
-                }
-                WebCommand::GetCachedFiles | WebCommand::GetTextFiles => {
-                    if self.controller_send
-                        .send(Box::new(WebEvent::CachedFiles(vec![])))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                    eprintln!("Media server received cached files command - this shouldn't happen");
-                    todo!()
-                }
-                WebCommand::GetFile(_) | WebCommand::GetTextFile(_) => {
-                    eprintln!("Media server received get file command - this shouldn't happen");
-                    todo!()
                 }
                 WebCommand::AddMediaFile(media_file) => {
                     let file_id = media_file.id;
@@ -216,16 +209,7 @@ impl Processor for MediaServer {
                         }
                     }
                 }
-                WebCommand::AddTextFile(_) | WebCommand::AddTextFileFromPath(_) | WebCommand::RemoveTextFile(_) => {
-                    if self.controller_send
-                        .send(Box::new(WebEvent::FileOperationError(
-                            "Media server cannot store text files".to_string()
-                        )))
-                        .is_err()
-                    {
-                        return true;
-                    }
-                }
+                _ => {}
             }
         }
         false
@@ -245,7 +229,7 @@ mod media_server_tests {
 
         let server = MediaServer::new(1, HashMap::new(), packet_recv, controller_recv, event_send);
 
-        assert_eq!(server._id, 1);
+        assert_eq!(server.id, 1);
         assert!(server.stored_media.is_empty());
     }
 

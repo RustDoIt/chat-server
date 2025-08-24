@@ -4,14 +4,14 @@ use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
 use common::{FragmentAssembler, RoutingHandler};
 use common::packet_processor::Processor;
-use common::types::{ChatCommand, ChatEvent, ChatRequest, ChatResponse, Command, Event, NodeCommand, ServerType};
+use common::types::{ChatCommand, ChatEvent, ChatRequest, ChatResponse, Command, Event, NodeCommand, NodeEvent, ServerType};
 
 pub struct ChatServer {
     routing_handler: RoutingHandler,
     controller_recv: Receiver<Box<dyn Command>>,
     controller_send: Sender<Box<dyn Event>>,
     packet_recv: Receiver<Packet>,
-    _id: NodeId,
+    id: NodeId,
     assembler: FragmentAssembler,
     registered_clients: HashSet<NodeId>,
 }
@@ -24,7 +24,7 @@ impl ChatServer {
             controller_recv,
             controller_send,
             packet_recv,
-            _id: id,
+            id,
             assembler: FragmentAssembler::default(),
             registered_clients: HashSet::new(),
         }
@@ -52,34 +52,43 @@ impl Processor for ChatServer {
     }
 
     fn handle_msg(&mut self, msg: Vec<u8>, from: NodeId, session_id: u64) {
+        let _ = self.controller_send.send(Box::new(NodeEvent::MessageReceived(from, self.id)));
         if let Ok(msg) = serde_json::from_slice::<ChatRequest>(&msg) {
             match msg {
                 ChatRequest::ServerTypeQuery => {
+                    let _ = self.controller_send.send(Box::new(NodeEvent::ServerTypeQueried(from, self.id)));
                     if let Ok(res) = serde_json::to_vec(&ChatResponse::ServerType { server_type: ServerType::ChatServer }) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                     }
                 }
                 ChatRequest::RegistrationToChat { client_id } => {
                     self.registered_clients.insert(client_id);
                     if let Ok(res) = serde_json::to_vec(&ChatResponse::RegistrationSuccess) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
+                        let _ = self.controller_send.send(Box::new(ChatEvent::ClientRegistered(client_id, self.id)));
                     }
                 }
                 ChatRequest::ClientListQuery => {
+                    let _ = self.controller_send.send(Box::new(ChatEvent::ClientListQueried(from, self.id)));
                     let client_list = self.registered_clients.iter().cloned().collect::<Vec<_>>();
                     if let Ok(res) = serde_json::to_vec(&ChatResponse::ClientList {list_of_client_ids: client_list}) {
                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                     }
                 }
                 ChatRequest::MessageFor { client_id, message } => {
                     if !self.registered_clients.contains(&client_id) {
                         if let Ok(res) = serde_json::to_vec(&ChatResponse::ErrorWrongClientId) {
                             let _ = self.routing_handler.send_message(&res, from, Some(session_id));
+                            let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, from)));
                         }
                         return
                     }
                     if let Ok(res) = serde_json::to_vec(&ChatResponse::MessageFrom { client_id: from, message }) {
                         let _ = self.routing_handler.send_message(&res, client_id, Some(session_id));
+                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent(self.id, client_id)));
                     }
                 }
             }
