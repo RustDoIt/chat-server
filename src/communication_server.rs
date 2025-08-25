@@ -1,3 +1,4 @@
+
 use std::collections::{HashMap, HashSet};
 use crossbeam::channel::{Receiver, Sender};
 use wg_internal::network::NodeId;
@@ -134,22 +135,22 @@ impl Processor for ChatServer {
                 NodeCommand::RemoveSender(node_id) => self.routing_handler.remove_neighbor(*node_id),
                 NodeCommand::Shutdown => return true
             }
-        } else if let Some(cmd) = cmd.downcast_ref::<ChatCommand>() {
-            if let ChatCommand::GetRegisteredClients = cmd {
-                let registered_clients = self.get_registered_clients();
-                if self.controller_send.send(Box::new(ChatEvent::RegisteredClients {
-                    notification_from: self.id,
-                    list: registered_clients
-                })).is_err() {
-                    return true;
-                }
+        } else if let Some(ChatCommand::GetRegisteredClients) = cmd.downcast_ref::<ChatCommand>() {
+            let registered_clients = self.get_registered_clients();
+            if self.controller_send.send(Box::new(ChatEvent::RegisteredClients {
+                notification_from: self.id,
+                list: registered_clients
+            })).is_err() {
+                return true;
             }
+        
         }
         false
     }
 }
 
 mod communication_server_tests {
+    #[allow(clippy::wildcard_imports)]
     use super::*;
     use crossbeam::channel::unbounded;
 

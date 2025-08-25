@@ -109,8 +109,8 @@ impl Processor for MediaServer {
                     match Uuid::parse_str(&media_id) {
                         Ok(uuid) => {
                             if let Some(media_file) = self.get_media_by_id(uuid) {
-                                if let Ok(serialized_media) = serde_json::to_vec(media_file) {
-                                    if let Ok(res) = serde_json::to_vec(&WebResponse::MediaFile {
+                                if let Ok(serialized_media) = serde_json::to_vec(media_file)
+                                    && let Ok(res) = serde_json::to_vec(&WebResponse::MediaFile {
                                         media_data: serialized_media
                                     }) {
                                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
@@ -122,17 +122,14 @@ impl Processor for MediaServer {
                                             notification_from: self.id,
                                             file: media_id.clone(),
                                         }));
-                                    }
                                 }
-                            } else {
-                                if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
+                            } else if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
                                     let _ = self.routing_handler.send_message(&res, from, Some(session_id));
                                     let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
                                         notification_from: self.id,
                                         to: from
                                     }));
                                 }
-                            }
                         }
                         Err(_) => {
                             if let Ok(res) = serde_json::to_vec(&WebResponse::BadUuid(media_id.clone())) {
@@ -178,8 +175,8 @@ impl Processor for MediaServer {
                     }
                 }
                 WebCommand::GetMediaFile{media_id, location: _location} => {
-                    if let Some(media_file) = self.get_media_by_id(*media_id) {
-                        if self.controller_send
+                    if let Some(media_file) = self.get_media_by_id(*media_id)
+                        && self.controller_send
                             .send(Box::new(WebEvent::MediaFile {
                                 notification_from: self.id,
                                 file: media_file.clone(),
@@ -188,7 +185,6 @@ impl Processor for MediaServer {
                         {
                             return true;
                         }
-                    }
                 }
                 WebCommand::AddMediaFile(media_file) => {
                     let file_id = media_file.id;

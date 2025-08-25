@@ -122,8 +122,8 @@ impl Processor for TextServer {
                     }));
                     match Uuid::parse_str(&file_id) {
                         Ok(uuid) => {
-                            if let Some(text_file) = self.get_file_by_id(uuid) {
-                                if let Ok(serialized_file) = serde_json::to_vec(text_file) {
+                            if let Some(text_file) = self.get_file_by_id(uuid)
+                                && let Ok(serialized_file) = serde_json::to_vec(text_file) {
                                     if let Ok(res) = serde_json::to_vec(&WebResponse::TextFile { file_data: serialized_file }) {
                                         let _ = self.routing_handler.send_message(&res, from, Some(session_id));
                                         let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
@@ -135,7 +135,6 @@ impl Processor for TextServer {
                                             file: file_id.clone(),
                                         }));
                                     }
-                                }
                             } else if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
                                 let _ = self.routing_handler.send_message(&res, from, Some(session_id));
                                 let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
@@ -160,7 +159,7 @@ impl Processor for TextServer {
                         }
                     }
                 }
-                _ => {}
+                WebRequest::MediaQuery{ .. } => {}
             }
         }
     }
@@ -188,8 +187,8 @@ impl Processor for TextServer {
                     }
                 }
                 WebCommand::GetTextFile(uuid) => {
-                    if let Some(text_file) = self.get_file_by_id(*uuid) {
-                        if self.controller_send
+                    if let Some(text_file) = self.get_file_by_id(*uuid)
+                        && self.controller_send
                             .send(Box::new(WebEvent::TextFile {
                                 notification_from: self.id,
                                 file: text_file.clone(),
@@ -198,7 +197,7 @@ impl Processor for TextServer {
                         {
                             return true;
                         }
-                    }
+
                 }
                 WebCommand::AddTextFile(text_file) => {
                     let file_id = text_file.id;
