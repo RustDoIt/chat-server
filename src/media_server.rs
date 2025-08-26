@@ -209,7 +209,6 @@ impl Processor for MediaServer {
                         {
                             return true;
                         }
-                    }
                 }
                 WebCommand::AddMediaFile(media_file) => {
                     let file_id = media_file.id;

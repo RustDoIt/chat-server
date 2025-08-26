@@ -176,6 +176,7 @@ impl Processor for ChatServer {
 }
 
 mod communication_server_tests {
+    #[allow(clippy::wildcard_imports)]
     use super::*;
     use crossbeam::channel::unbounded;
 

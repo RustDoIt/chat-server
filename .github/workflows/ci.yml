@@ -1,0 +1,31 @@
+name: Build, Clippy (Pedantic), Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-clippy-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Build (fail on warnings)
+        run: cargo build --verbose
+        env:
+          RUSTFLAGS: "-D warnings"
+
+      - name: Run Clippy (pedantic, fail on warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic
+
+      - name: Run tests
+        run: cargo test --verbose

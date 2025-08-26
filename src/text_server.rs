@@ -223,7 +223,7 @@ impl Processor for TextServer {
                         {
                             return true;
                         }
-                    }
+
                 }
                 WebCommand::AddTextFile(text_file) => {
                     let file_id = text_file.id;
