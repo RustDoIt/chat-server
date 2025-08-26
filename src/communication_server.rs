@@ -126,6 +126,10 @@ impl Processor for ChatServer {
                                 Some(from),
                                 Some(session_id),
                             );
+                            let _ = self.controller_send.send(Box::new(ChatEvent::ClientNotInList {
+                                notification_from: self.id,
+                                id: client_id
+                            }));
                         }
                         return;
                     }
