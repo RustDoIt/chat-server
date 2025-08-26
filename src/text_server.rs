@@ -1,12 +1,15 @@
-use std::collections::HashMap;
+use common::file_conversion;
+use common::packet_processor::Processor;
+use common::types::{
+    Command, Event, NodeCommand, NodeEvent, ServerType, TextFile, WebCommand, WebEvent, WebRequest,
+    WebResponse,
+};
+use common::{FragmentAssembler, RoutingHandler};
 use crossbeam::channel::{Receiver, Sender};
+use std::collections::HashMap;
 use uuid::Uuid;
 use wg_internal::network::NodeId;
 use wg_internal::packet::{NodeType, Packet};
-use common::{FragmentAssembler, RoutingHandler};
-use common::packet_processor::Processor;
-use common::types::{Command, Event, NodeCommand, NodeEvent, ServerType, TextFile, WebCommand, WebEvent, WebRequest, WebResponse};
-use common::file_conversion;
 
 pub struct TextServer {
     routing_handler: RoutingHandler,
@@ -25,7 +28,7 @@ impl TextServer {
         neighbors: HashMap<NodeId, Sender<Packet>>,
         packet_recv: Receiver<Packet>,
         controller_recv: Receiver<Box<dyn Command>>,
-        controller_send: Sender<Box<dyn Event>>
+        controller_send: Sender<Box<dyn Event>>,
     ) -> Self {
         let router = RoutingHandler::new(id, NodeType::Server, neighbors, controller_send.clone());
         Self {
@@ -81,37 +84,43 @@ impl Processor for TextServer {
     }
 
     fn handle_msg(&mut self, msg: Vec<u8>, from: NodeId, session_id: u64) {
-        let _ = self.controller_send.send(Box::new(NodeEvent::MessageReceived {
-            notification_from: self.id,
-            from
-        }));
+        let _ = self
+            .controller_send
+            .send(Box::new(NodeEvent::MessageReceived {
+                notification_from: self.id,
+                from,
+            }));
         if let Ok(msg) = serde_json::from_slice::<WebRequest>(&msg) {
             match msg {
                 WebRequest::ServerTypeQuery => {
-                    let _ = self.controller_send.send(Box::new(NodeEvent::ServerTypeQueried {
-                        notification_from: self.id,
-                        from
-                    }));
-                    if let Ok(res) = serde_json::to_vec(&WebResponse::ServerType { server_type: ServerType::TextServer }) {
-                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
-                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
+                    let _ = self
+                        .controller_send
+                        .send(Box::new(NodeEvent::ServerTypeQueried {
                             notification_from: self.id,
-                            to: from
+                            from,
                         }));
+                    if let Ok(res) = serde_json::to_vec(&WebResponse::ServerType {
+                        server_type: ServerType::TextServer,
+                    }) {
+                        let _ =
+                            self.routing_handler
+                                .send_message(&res, Some(from), Some(session_id));
                     }
                 }
                 WebRequest::TextFilesListQuery => {
-                    let _ = self.controller_send.send(Box::new(WebEvent::FilesListQueried {
-                        notification_from: self.id,
-                        from,
-                    }));
-                    let files_list = self.get_files_list();
-                    if let Ok(res) = serde_json::to_vec(&WebResponse::TextFilesList {files: files_list}) {
-                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
-                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
+                    let _ = self
+                        .controller_send
+                        .send(Box::new(WebEvent::FilesListQueried {
                             notification_from: self.id,
-                            to: from
+                            from,
                         }));
+                    let files_list = self.get_files_list();
+                    if let Ok(res) =
+                        serde_json::to_vec(&WebResponse::TextFilesList { files: files_list })
+                    {
+                        let _ =
+                            self.routing_handler
+                                .send_message(&res, Some(from), Some(session_id));
                     }
                 }
                 WebRequest::FileQuery { file_id } => {
@@ -124,33 +133,43 @@ impl Processor for TextServer {
                         Ok(uuid) => {
                             if let Some(text_file) = self.get_file_by_id(uuid) {
                                 if let Ok(serialized_file) = serde_json::to_vec(text_file) {
-                                    if let Ok(res) = serde_json::to_vec(&WebResponse::TextFile { file_data: serialized_file }) {
-                                        let _ = self.routing_handler.send_message(&res, from, Some(session_id));
-                                        let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
-                                            notification_from: self.id,
-                                            to: from
-                                        }));
-                                        let _ = self.controller_send.send(Box::new(WebEvent::FileServed {
-                                            notification_from: self.id,
-                                            file: file_id.clone(),
-                                        }));
+                                    if let Ok(res) = serde_json::to_vec(&WebResponse::TextFile {
+                                        file_data: serialized_file,
+                                    }) {
+                                        let _ = self.routing_handler.send_message(
+                                            &res,
+                                            Some(from),
+                                            Some(session_id),
+                                        );
+
+                                        let _ = self.controller_send.send(Box::new(
+                                            WebEvent::FileServed {
+                                                notification_from: self.id,
+                                                file: file_id.clone(),
+                                            },
+                                        ));
                                     }
                                 }
-                            } else if let Ok(res) = serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid)) {
-                                let _ = self.routing_handler.send_message(&res, from, Some(session_id));
-                                let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
-                                    notification_from: self.id,
-                                    to: from
-                                }));
+                            } else if let Ok(res) =
+                                serde_json::to_vec(&WebResponse::ErrorFileNotFound(uuid))
+                            {
+                                let _ = self.routing_handler.send_message(
+                                    &res,
+                                    Some(from),
+                                    Some(session_id),
+                                );
                             }
                         }
                         Err(_) => {
-                            if let Ok(res) = serde_json::to_vec(&WebResponse::BadUuid(file_id.clone())) {
-                                let _ = self.routing_handler.send_message(&res, from, Some(session_id));
-                                let _ = self.controller_send.send(Box::new(NodeEvent::MessageSent {
-                                    notification_from: self.id,
-                                    to: from
-                                }));
+                            if let Ok(res) =
+                                serde_json::to_vec(&WebResponse::BadUuid(file_id.clone()))
+                            {
+                                let _ = self.routing_handler.send_message(
+                                    &res,
+                                    Some(from),
+                                    Some(session_id),
+                                );
+
                                 let _ = self.controller_send.send(Box::new(WebEvent::BadUuid {
                                     notification_from: self.id,
                                     from,
@@ -160,7 +179,7 @@ impl Processor for TextServer {
                         }
                     }
                 }
-                _ => {}
+                WebRequest::MediaQuery { media_id: _ } => {}
             }
         }
     }
@@ -169,18 +188,23 @@ impl Processor for TextServer {
         let cmd = cmd.into_any();
         if let Some(cmd) = cmd.downcast_ref::<NodeCommand>() {
             match cmd {
-                NodeCommand::AddSender(node_id, sender) => self.routing_handler.add_neighbor(*node_id, sender.clone()),
-                NodeCommand::RemoveSender(node_id) => self.routing_handler.remove_neighbor(*node_id),
-                NodeCommand::Shutdown => return true
+                NodeCommand::AddSender(node_id, sender) => {
+                    self.routing_handler.add_neighbor(*node_id, sender.clone());
+                }
+                NodeCommand::RemoveSender(node_id) => {
+                    self.routing_handler.remove_neighbor(*node_id);
+                }
+                NodeCommand::Shutdown => return true,
             }
-        }  else if let Some(cmd) = cmd.downcast_ref::<WebCommand>() {
+        } else if let Some(cmd) = cmd.downcast_ref::<WebCommand>() {
             match cmd {
                 WebCommand::GetTextFiles => {
                     let text_files = self.get_all_text_files();
-                    if self.controller_send
+                    if self
+                        .controller_send
                         .send(Box::new(WebEvent::TextFiles {
                             notification_from: self.id,
-                            files: text_files
+                            files: text_files,
                         }))
                         .is_err()
                     {
@@ -189,7 +213,8 @@ impl Processor for TextServer {
                 }
                 WebCommand::GetTextFile(uuid) => {
                     if let Some(text_file) = self.get_file_by_id(*uuid) {
-                        if self.controller_send
+                        if self
+                            .controller_send
                             .send(Box::new(WebEvent::TextFile {
                                 notification_from: self.id,
                                 file: text_file.clone(),
@@ -204,7 +229,8 @@ impl Processor for TextServer {
                     let file_id = text_file.id;
                     self.add_text_file(text_file.clone());
 
-                    if self.controller_send
+                    if self
+                        .controller_send
                         .send(Box::new(WebEvent::TextFileAdded {
                             notification_from: self.id,
                             uuid: file_id,
@@ -220,7 +246,8 @@ impl Processor for TextServer {
                             let file_id = text_file.id;
                             self.add_text_file(text_file);
 
-                            if self.controller_send
+                            if self
+                                .controller_send
                                 .send(Box::new(WebEvent::TextFileAdded {
                                     notification_from: self.id,
                                     uuid: file_id,
@@ -245,7 +272,8 @@ impl Processor for TextServer {
                 }
                 WebCommand::RemoveTextFile(uuid) => {
                     if let Some(removed_file) = self.remove_text_file(*uuid) {
-                        if self.controller_send
+                        if self
+                            .controller_send
                             .send(Box::new(WebEvent::TextFileRemoved {
                                 notification_from: self.id,
                                 uuid: removed_file.id,
@@ -254,15 +282,16 @@ impl Processor for TextServer {
                         {
                             return true;
                         }
-                    } else if self.controller_send
-                            .send(Box::new(WebEvent::FileOperationError {
-                                notification_from: self.id,
-                                msg: format!("Text file with ID {uuid} not found"),
-                            }))
-                            .is_err()
-                        {
-                            return true;
-                        }
+                    } else if self
+                        .controller_send
+                        .send(Box::new(WebEvent::FileOperationError {
+                            notification_from: self.id,
+                            msg: format!("Text file with ID {uuid} not found"),
+                        }))
+                        .is_err()
+                    {
+                        return true;
+                    }
                 }
                 _ => {}
             }
@@ -274,8 +303,8 @@ impl Processor for TextServer {
 #[cfg(test)]
 mod text_server_tests {
     use super::*;
-    use crossbeam::channel::unbounded;
     use common::types::MediaReference;
+    use crossbeam::channel::unbounded;
 
     fn create_test_text_server() -> TextServer {
         let (_controller_send, controller_recv) = unbounded();
@@ -301,7 +330,7 @@ mod text_server_tests {
         let test_file = TextFile::new(
             "Test File".to_string(),
             "This is a test".to_string(),
-            vec![]
+            vec![],
         );
         let file_id = test_file.id;
         let title = test_file.clone().title;
@@ -323,7 +352,7 @@ mod text_server_tests {
         let test_file = TextFile::new(
             "Test File".to_string(),
             "This is a test file content.".to_string(),
-            vec![]
+            vec![],
         );
         let file_id = test_file.id;
         let title = test_file.clone().title;
@@ -344,7 +373,7 @@ mod text_server_tests {
         let text_file = TextFile::new(
             "Test Article".to_string(),
             "This is a test article with media reference: {}".to_string(),
-            vec![media_ref]
+            vec![media_ref],
         );
         let file_id = text_file.id;
         server.add_text_file(text_file);
@@ -358,18 +387,18 @@ mod text_server_tests {
         server.handle_msg(serialized, 2, 101);
 
         let file_request = WebRequest::FileQuery {
-            file_id: file_id.to_string()
+            file_id: file_id.to_string(),
         };
         let serialized = serde_json::to_vec(&file_request).unwrap();
         server.handle_msg(serialized, 2, 102);
 
         let invalid_request = WebRequest::FileQuery {
-            file_id: "invalid-uuid".to_string()
+            file_id: "invalid-uuid".to_string(),
         };
         let _serialized = serde_json::to_vec(&invalid_request).unwrap();
 
         let nonexistent_request = WebRequest::FileQuery {
-            file_id: Uuid::new_v4().to_string()
+            file_id: Uuid::new_v4().to_string(),
         };
         let serialized = serde_json::to_vec(&nonexistent_request).unwrap();
         server.handle_msg(serialized, 2, 103);
@@ -381,11 +410,7 @@ mod text_server_tests {
         let mut server = create_test_text_server();
 
         let large_content = "Lorem ipsum ".repeat(1000);
-        let large_file = TextFile::new(
-            "Large Article".to_string(),
-            large_content.clone(),
-            vec![]
-        );
+        let large_file = TextFile::new("Large Article".to_string(), large_content.clone(), vec![]);
         server.add_text_file(large_file.clone());
 
         let retrieved = server.get_file_by_id(large_file.id).unwrap();
@@ -419,7 +444,7 @@ mod text_server_tests {
         let test_file = TextFile::new(
             "Command Test".to_string(),
             "Added via command".to_string(),
-            vec![]
+            vec![],
         );
         let file_id = test_file.id;
 
